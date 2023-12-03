@@ -1,0 +1,303 @@
+---
+title: 'Predicting the Number of Review Stars Given to Businesses on Yelp: A Classification
+  Random Forest Approach'
+author: 'Aditya Deshmukh: 2122565'
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+Word count (excluding code blocks, graphs, tables, tabula statement and references): 1247
+<br>
+
+## Tabula Statement
+
+We're part of an academic community at Warwick.
+
+Whether studying, teaching, or researching, we’re all taking part in an expert conversation which must meet standards of academic integrity. When we all meet these standards, we can take pride in our own academic achievements, as individuals and as an academic community.
+
+Academic integrity means committing to honesty in academic work, giving credit where we've used others' ideas and being proud of our own achievements.
+
+In submitting my work I confirm that:
+
+1. I have read the guidance on academic integrity provided in the Student Handbook and understand the University regulations in relation to Academic Integrity. I am aware of the potential consequences of Academic Misconduct.
+
+2. I declare that the work is all my own, except where I have stated otherwise.
+
+3. No substantial part(s) of the work submitted here has also been submitted by me in other credit bearing assessments courses of study (other than in certain cases of a resubmission of a piece of work), and I acknowledge that if this has been done this may lead to an appropriate sanction.
+
+4. Where a generative Artificial Intelligence such as ChatGPT has been used I confirm I have abided by both the University guidance and specific requirements as set out in the Student Handbook and the Assessment brief. I have clearly acknowledged the use of any generative Artificial Intelligence in my submission, my reasoning for using it and which generative AI (or AIs) I have used. Except where indicated the work is otherwise entirely my own.
+
+5. I understand that should this piece of work raise concerns requiring investigation in relation to any of points above, it is possible that other work I have submitted for assessment will be checked, even if marks (provisional or confirmed) have been published.
+
+6. Where a proof-reader, paid or unpaid was used, I confirm that the proofreader was made aware of and has complied with the University’s proofreading policy.
+
+7. I consent that my work may be submitted to Turnitin or other analytical technology. I understand the use of this service (or similar), along with other methods of maintaining the integrity of the academic process, will help the University uphold academic standards and assessment fairness.
+
+Privacy statement
+
+The data on this form relates to your submission of coursework. The date and time of your submission, your identity, and the work you have submitted will be stored. We will only use this data to administer and record your coursework submission.
+
+Related articles
+
+[Reg. 11 Academic Integrity (from 4 Oct 2021)](https://warwick.ac.uk/services/gov/calendar/section2/regulations/academic_integrity/)
+
+[Guidance on Regulation 11](https://warwick.ac.uk/services/aro/dar/quality/az/acintegrity/framework/guidancereg11/)
+
+[Proofreading Policy](https://warwick.ac.uk/services/aro/dar/quality/categories/examinations/policies/v_proofreading/)  
+
+[Education Policy and Quality Team](https://warwick.ac.uk/services/aro/dar/quality/az/acintegrity/framework/guidancereg11/)
+
+[Academic Integrity (warwick.ac.uk)](https://warwick.ac.uk/students/learning-experience/academic_integrity)
+
+
+## Introduction
+
+Yelp is an online platform where users review businesses they visit by giving them stars ranging 1-5 (Asghar, 2016). This project predicts the number of stars of a review based on the reviewed business’, reviewing user’s and review’s characteristics using a classification random forest model.
+
+The chosen data science methodology for this project was the Cross-Industry Standard Process for Data Mining (CRISP_DM) because it is intuitive, has a clear, non-complex structure and is adaptable and iterative such that processes in each stage of the project can be revised based on new developments (Wirth & Hipp, 2000). The business and data understanding phases were relatively simple as the core aim was to produce the best predictive model for review stars based on Yelp-provided data sets. I used CRISP_DM’s iterative process between data preparation and modelling after observing that dropped observations caused by missing values negatively affected the performance of certain models. Consequently, I regularly adjusted the variables used for modelling in the final dataset. In the evaluation stage, I compared the classification random forest model to other techniques and explained why I chose it. 
+
+![(Wirth & Hipp, 2000)](C:/Warwick/EC349/Assignment/CRISP_DM Diagram.png)
+
+<br>
+
+The most difficult challenge was tackling the trade-off between building a highly accurate predictive model and retaining sufficient observations, as mentioned later in the paper. In short, including too many explanatory variables was suboptimal because it resulted in many dropped observations since multiple variables had missing values that did not overlap across rows.  Hence, I had to choose a combination of variables with higher explanatory power, without dropping too many observations.
+
+## Data Preparation
+
+I used a dataset with 1,398,056 Yelp reviews, complemented by a dataset of the attributes of 150,346 businesses and a dataset for 397,579 users’ characteristics (all the businesses and users in the review dataset are in these datasets)  (Yelp, 2023). The outcome variable is review stars, contained within the review dataset. Variables from all three datasets were used to predict the number of review stars. I combined these three original data frames by merging the business and user data with the review data to give rise to “merged_df”.
+
+```r
+merged_df <- merge(review_data, business_data, by ="business_id", all.x= TRUE)
+merged_df <- merge(merged_df, user_data, by ="user_id", all.x = TRUE)
+```
+Many user and business characteristics had significant missing values of around one million per variable and since there was little overlap between missing values, including even one business attribute of “ByAppointmentOnly” and a user variable of “average_stars” resulted in 1,321,286 incomplete rows that would have required omission during modelling, potentially biasing the sample. 
+
+```r
+sum(rowSums(is.na(data.frame(merged_df$attributes.ByAppointmentOnly))) > 0)
+```
+
+[1] 1015585
+
+```r
+sum(rowSums(is.na(data.frame(merged_df$average_stars))) > 0)
+```
+
+[1] 1118178
+
+```r
+sum(rowSums(is.na(data.frame(merged_df[,c("attributes.ByAppointmentOnly","average_stars")]))) > 0)
+```
+[1] 1321286
+
+```r
+sum(rowSums(is.na(data.frame(merged_df[,c("attributes.ByAppointmentOnly","average_stars")]))) > 0)
+```
+
+[1] 0.5824122
+
+I ended up choosing user variables over business attributes for the following reasons: 
+
+* Other (complete) variables for businesses could still be included. 
+* The “average_stars” user variable is relatively strongly correlated with the outcome variable “stars.x”.
+* All user variables have missing values in the same rows meaning that including more than one user variable did not drop even more rows. 
+* Finally, including some business attributes biases the sample because some only included restaurants or other specific business types like “attributes$RestaurantsDelivery”.
+
+Exploratory data analysis revealed that mean stars across states varies greatly. However, looking at the frequencies of each state, some contain over 100,000 reviewed businesses. Others however, had very few, like Vermont (“VT”) with only one. Hence, it would have been bad practice to include State dummies since models may have been overfitted on particular instances during training (for states with few occurrences), resulting in poor predictions over test data.
+
+```r
+statewise_stars <- aggregate(stars.x ~ state, data = merged_df, mean)
+barplot(statewise_stars$stars.x, names.arg = statewise_stars$state, col = "skyblue", 
+main = "Mean Stars by State", xlab = "State", ylab = "Mean Stars")
+```
+
+![](C:\Warwick\EC349\Assignment\Graph_1.png)
+
+```r
+ggplot(merged_df, aes(x = state)) +
+  geom_bar(fill = "lightblue", color = "black") +
+  labs(title = "Bar Plot of Frequencies",
+       x = "State",
+       y = "Frequency in 1000s") +
+  scale_y_continuous(labels = scales::comma_format(scale = 1e-3))
+```
+
+![](C:\Warwick\EC349\Assignment\Graph2.png)
+
+```r
+sum(merged_df$state == "VT")
+```
+
+[1] 1
+
+Regarding the other variables, to minimise computational strain and excess noise in modelling, I chose to shortlist certain variables. I grouped variables with high correlation, only choosing one variable within each group with the highest correlation with “stars.x”. I created three correlation matrices for these variable groups and “stars.x”. “cor_matrix_1” showed “useful.x”, “funny.x” and “cool.x” to be highly correlated, but the absolute value of the correlation coefficient between “useful.x” and “stars.x” was the highest, so I decided to choose this variable. Similar analysis with “cor_matrix_2” and “cor_matrix_3” led me to choose “review_count.y” and “compliment_writer”.
+
+```r
+cor_matrix_1 <- cor(merged_df[,c("stars.x", "useful.x", "funny.x", "cool.x")])
+```
+
+![](C:\Warwick\EC349\Assignment\cor_matrix_1.png)
+
+```r
+cor_matrix_2 <- cor(merged_df[,c("stars.x", "review_count.y", "useful.y", "funny.y", "cool.y", "fans")], use= "complete.obs")
+```
+
+![](C:\Warwick\EC349\Assignment\cor_matrix_2.png)
+
+```r
+cor_matrix_3 <- cor(merged_df[,c("stars.x","compliment_hot", "compliment_more", "compliment_profile", 
+"compliment_cute", "compliment_list", "compliment_note", "compliment_plain", "compliment_cool", 
+"compliment_funny", "compliment_writer", "compliment_photos")], use= "complete.obs")
+```
+
+![](C:\Warwick\EC349\Assignment\cor_matrix_3.png)
+
+A t-test of the “is_open” variable revealed a significant difference in means of “stars.x” between open v.s. closed businesses, leading me to choose this variable as a predictor.
+
+```r
+t.test(stars.x ~ is_open, data = merged_df)
+```
+
+![](C:\Warwick\EC349\Assignment\t-test.png)
+
+Hence my final list of variables was:
+
+|Variable|Explanation|
+|--------|-----------|
+|“stars.x”|The outcome variable: review stars|
+|“useful.x”|Number of “useful” votes of a review|
+|“stars.y”|Average number of stars a business has received|
+|“review_count.x”|Number of reviews a business has received|
+|“is_open”|Dummy variable for if the business is open or not|
+|“review_count.y”|Number of reviews a user has given|
+|“average_stars”|Average number of stars a user has given across reviews|
+|“compliment_writer”|Number of “compliment writer” votes given to a user|
+
+I restricted the final combined dataset “merged_df_final” to the above variables, also omitting missing values. Then, I split this data randomly into training and test sets, resulting in 269,878 observations in “final_df_train” and 10,000 observations in “final_df_test”.
+
+```r
+merged_df_final <- select(merged_df, review_id, business_id, user_id, stars.x, useful.x, stars.y, 
+review_count.x, is_open, review_count.y, average_stars, compliment_writer)
+merged_df_final <- na.omit(merged_df_final)
+```
+
+```r
+#Making training dataset:
+
+set.seed(1)
+train <- sample(1:nrow(merged_df_final), nrow(merged_df_final) - 10000)
+final_df_train <- merged_df_final[train,]
+
+#Making test dataset:
+
+final_df_test <- merged_df_final[-train,]
+```
+
+## Modelling and Results
+
+Random forest using classification trees was used to predict the variable “stars.x” in this paper. I chose this model because it outperformed the baseline model of simple linear regression and various other modelling approaches in terms of prediction.
+
+Using simple linear regression resulted in continuous outcome variable predictions. But review stars are whole numbers, not decimals. Additionally, this model returned some predictions greater than 5 and less than 1. Consequently, I rounded the predictions to the nearest whole number and limited the range of outcomes between 1 and 5, where the outcome took 5 for predictions greater than 5 and 1 for less than 1. Then, I tested the percentage accuracy of predictions by calculating the proportion of total predictions matching the actual observed review star ratings in the test data. This yielded a prediction accuracy of 39.93%. 
+
+```r
+lm.model <- lm(stars.x~useful.x+ stars.y+ review_count.x+ is_open+ review_count.y+ average_stars
++ compliment_writer, data= final_df_train)
+summary(lm.model) 
+```
+
+![](C:\Warwick\EC349\Assignment\Linear_regression_output.png)
+
+```r
+lm_predict_round <- data.frame(col1 = round(lm_predict))
+lm_predict_round <- lm_predict_round %>%
+  mutate(col2 = ifelse(col1>5,5,ifelse(col1<1, 1, col1)))
+accuracy_percentage_lm <- (sum(lm_predict_round$col2 == final_df_test$stars.x)/nrow(final_df_test))*100
+print(paste("Accuracy Percentage:", accuracy_percentage_lm, "%"))
+```
+
+[1] "Accuracy Percentage: 39.93 %"
+
+```r
+matplot(1:100, cbind(lm_predict_round[1:100,2], data.frame(final_df_test$stars.x)[1:100,]), type = "l", 
+lty = 1, 
+        col = c("red", "blue"), xlab = "First 100 test data points", 
+        ylab = "Stars", main = "Linear regression predictions v.s. observed stars")
+legend("topright", legend = c("Prediction", "actual"), 
+       col = c("red", "blue"), 
+       lty = 1)
+```
+
+![](C:\Warwick\EC349\Assignment\Linear_regression_graph.png)
+
+Then I moved to a classification tree. Decision trees like this use recursive partitioning to split variables into a flow chart structure enabling the prediction of a certain categorical variable based on input variable combinations. The ordering of variables in the tree as well as the optimal split of continuous variables is based on a selection process aimed at producing the highest information gain (James et al., 2021). Ordinarily, they are highly interpretable but this tree is unpruned with many branches to capture the complex intricacies of the data (cp=0.0001). This model gave an accuracy percentage of 58.58%, which is much higher than the baseline model.
+
+```r
+rpart_tree_class<-rpart(as.factor(stars.x)~useful.x+ stars.y+ review_count.x+ is_open+ review_count.y
++ average_stars+ compliment_writer, data=final_df_train, method= "class", cp = 0.0001)
+rpart.plot(rpart_tree_class)
+```
+
+![](C:\Warwick\EC349\Assignment\Classification_tree_plot.png)
+
+```r
+rpart_class.pred <- predict(rpart_tree_class, newdata = final_df_test, type= "class")
+
+rpart_class_predict <- data.frame(rpart_class.pred)
+colnames(rpart_class_predict)[1] <- "col1"
+accuracy_percentage_rpart_class <- (sum(rpart_class_predict$col1 == final_df_test$stars.x)
+/nrow(final_df_test))*100
+print(paste("Accuracy Percentage:", accuracy_percentage_rpart_class, "%"))
+```
+
+[1] "Accuracy Percentage: 58.58 %"
+
+```r
+matplot(1:100, cbind(rpart_class_predict[1:100,], data.frame(final_df_test$stars.x)[1:100,]), 
+type = "l", lty = 1, 
+        col = c("red", "blue"), xlab = "First 100 test data points", 
+        ylab = "Stars", main = "Classification Tree predictions v.s. observed stars")
+legend("topright", legend = c("Prediction", "actual"), 
+       col = c("red", "blue"), 
+       lty = 1)
+```
+
+![](C:\Warwick\EC349\Assignment\Classification_tree_graph.png)
+
+Random forest made a further improvement on this because it took all the predictive benefits of a classification tree and averaged over 100 different trees to capture idiosyncrasies in observations as well as using different subsets of input variables to reduce correlation across predictions, resulting in a prediction accuracy percentage of 59.47%.
+
+```r
+accuracy_percentage_RF_class <- (sum(RF_class_predict$col1 == final_df_test$stars.x)
+/nrow(final_df_test))*100
+print(paste("Accuracy Percentage:", accuracy_percentage_RF_class, "%"))
+```
+
+[1] "Accuracy Percentage: 59.47 %"
+
+```r
+matplot(1:100, cbind(RF_class_predict[1:100,], data.frame(final_df_test$stars.x)[1:100,]), type = "l", 
+lty = 1, 
+        col = c("red", "blue"), xlab = "First 100 test data points", 
+        ylab = "Stars", main = "Classification Random Forest predictions v.s. observed stars")
+legend("topright", legend = c("Prediction", "actual"), 
+       col = c("red", "blue"), 
+       lty = 1)
+```
+
+![](C:\Warwick\EC349\Assignment\Random_forest_plot.png)
+
+## Evaluation
+
+I chose the classification random forest model because the project aimed to find the most accurate model that predicts stars given to 10,000 random reviews (also considering the minimisation of computational strain). The classification random forest model greatly outperformed the baseline linear regression and various other models. Since it is a classification model, the outcome predictions did not need to be approximated through rounding and restricting, allowing it to capture the categorical nature of stars.x, rather than initially assuming it is a continuous variable. The main reason this model outperformed the baseline can also be explained through the potential reason for classification trees having higher relative predictive power. Because classification trees do not assume linear relationships and consider potential interactions between different variables, unlike simple regression, they may capture relationships that better represent reality, as in this example. This point regarding variable interactions potentially explains why the decision tree outperforms logistic regression which has a prediction accuracy of about 55.95%. Random forest was a further improvement over the classification tree and other modelling approaches because the randomness introduced to the training process in feature and data selection reduced overfitting and variance of outcomes (James et al., 2021).  This made the model more generalised to unseen test data, giving it the highest prediction accuracy of 59.47%. 
+
+## References
+
+Asghar, N. (2016). *Yelp Dataset Challenge: Review Rating Prediction.* Cornell University.
+
+James, G., Witten, D., Hastie, T., & Tibshirani, R. (2021). *An Introduction to Statistical Learning.* Springer.
+
+Wirth, R., & Hipp, J. (2000). *CRISP-DM: Towards a Standard Process Model for Data.* University of Bologna.
+
+Yelp. (2023). *Yelp Open Dataset.* Retrieved from Yelp: https://www.yelp.com/dataset
+
+
